@@ -1,0 +1,44 @@
+{
+  "manifest_version": "0.3",
+  "name": "openproject-cli",
+  "display_name": "OpenProject",
+  "version": "0.1.0",
+  "description": "Interact with OpenProject projects, work packages, users, and time entries via the API.",
+  "author": {
+    "name": "Daniele Raiteri"
+  },
+  "license": "Apache-2.0",
+  "server": {
+    "type": "binary",
+    "entry_point": "bin/openproject-cli",
+    "mcp_config": {
+      "command": "${__dirname}/bin/openproject-cli",
+      "args": []
+    }
+  },
+  "user_config": {
+    "openproject_password": {
+      "type": "string",
+      "title": "OPENPROJECT_PASSWORD",
+      "description": "Your OpenProject password.",
+      "sensitive": true
+    },
+    "openproject_username": {
+      "type": "string",
+      "title": "OPENPROJECT_USERNAME",
+      "description": "Your OpenProject login email.",
+      "sensitive": false
+    },
+    "openproject_url": {
+      "type": "string",
+      "title": "OPENPROJECT_URL",
+      "description": "Base URL of the OpenProject instance.",
+      "sensitive": false,
+      "default": "https://openproject.danieleraiteri.duckdns.org"
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": ["darwin", "linux", "win32"]
+  }
+}
