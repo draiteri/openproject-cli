@@ -1,6 +1,6 @@
 ---
 name: openproject-cli
-description: "Interact with OpenProject (projects, work packages, users, time entries) via the API. Trigger phrases: `openproject`, `work packages`, `projects`, `tasks`, `create task`, `create work package`, `list projects`, `list work packages`, `show work package`, `update work package`, `delete work package`, `time entries`."
+description: "Interact with OpenProject (projects, work packages, users, time entries) via the API. Trigger phrases: `openproject`, `work packages`, `projects`, `tasks`, `create task`, `create work package`, `list projects`, `list work packages`, `show work package`, `update work package`, `delete work package`, `time entries`, `applications`, `vacancies`, `rejected`."
 author: "Daniele Raiteri"
 license: "Apache-2.0"
 argument-hint: "<command> [args] | install cli"
@@ -86,25 +86,44 @@ openproject-cli users list --output json              # List all users (JSON)
 
 ### Work Packages
 
+**List** — by default shows 20 open (non-closed) work packages, with Status, Type, and Project columns.
+
 ```bash
-openproject-cli work-packages list                                         # List all work packages
-openproject-cli work-packages list --project 22                            # List work packages in a project
-openproject-cli work-packages list --output json                           # List as JSON
-openproject-cli work-packages show 60                                      # Show work package #60
-openproject-cli work-packages show 60 --output json                        # Show as JSON
-openproject-cli work-packages create --project 22 --subject "Do X"         # Create a task
+openproject-cli work-packages list                                   # First 20 open (page 1)
+openproject-cli work-packages list --all                             # All statuses (including closed/rejected)
+openproject-cli work-packages list --project 22                      # Filter by project ID
+openproject-cli work-packages list --status Rejected                 # Filter by status name
+openproject-cli work-packages list --type Vacancy                    # Filter by type name
+openproject-cli work-packages list --type Vacancy --status Rejected  # Combined filters
+openproject-cli work-packages list --all --page 2 --page-size 50     # Pagination: page 2, 50 per page
+openproject-cli work-packages list --output json                     # JSON output
+```
+
+**Available status names:** New, In Progress, Waiting, On Hold, Summary, Plan, Attend, Applied, Interview, Negotiation, To Buy, Ordered, Cancelled, Rejected, Closed, Check Again Later
+
+**Available type names:** Task, Milestone, Summary task, Event, Shopping, Vacancy
+
+**Show / Create / Update / Delete:**
+
+```bash
+openproject-cli work-packages show 60                                # Show full details
+openproject-cli work-packages show 60 --output json                  # Show as JSON
+openproject-cli work-packages create --project 22 --subject "Do X"   # Create a task
 openproject-cli work-packages create --project 22 --subject "Do X" \
-  --description "Details here" --type 1                                    # Create with type and description
-openproject-cli work-packages update 60 --status 2                         # Update status
-openproject-cli work-packages update 60 --assignee 5                       # Assign to user
-openproject-cli work-packages update 60 --subject "New title"              # Rename
-openproject-cli work-packages delete 60                                    # Delete
+  --description "Details here" --type "Vacancy"                      # Create with type name
+openproject-cli work-packages create --project 11 --subject "Bug" \
+  --type "Task"                                                      # Create with type name
+openproject-cli work-packages update 60 --status "Rejected"          # Update status by name
+openproject-cli work-packages update 60 --status "14"                # Update status by ID also works
+openproject-cli work-packages update 60 --assignee 5                 # Assign to user
+openproject-cli work-packages update 60 --subject "New title"        # Rename
+openproject-cli work-packages delete 60                              # Delete
 ```
 
 ### Time Entries
 
 ```bash
-openproject-cli time-entries list                                          # List all time entries
+openproject-cli time-entries list                                          # List all
 openproject-cli time-entries list --project 22                             # Filter by project
 openproject-cli time-entries list --work-package 60                        # Filter by work package
 openproject-cli time-entries create --work-package 60 --hours 2.5 \        # Log 2h30m
@@ -123,34 +142,56 @@ openproject-cli time-entries create --work-package 60 --hours 2.5 \        # Log
 
 - **Session-based auth** — Authenticates via web login, handles CSRF automatically
 - **Full CRUD** — Create, read, update, and delete work packages
+- **Filter by name** — `--status Rejected` and `--type Vacancy` use human-readable names, not IDs
+- **See everything** — `--all` bypasses the default "open only" filter to show closed/rejected items
+- **Pagination** — `--page` and `--page-size` control result size
 - **JSON output** — All list/show commands support `--output json` for programmatic use
 - **No dependencies** — Single self-contained binary in the skill directory
-- **Agent-friendly tables** — Default output is aligned tabular text, easy to parse
+- **Agent-friendly tables** — Default output shows ID, Subject, Status, Type, and Project columns
 
-## Examples
+## Common Agent Use Cases
 
-### Agent: "What projects do I have?"
+### "Show me all rejected job applications"
 
 ```bash
-openproject-cli projects list
+openproject-cli work-packages list --type Vacancy --status Rejected --all
 ```
 
-### Agent: "Show all work packages in the Travel project"
+### "How many open vacancies are there?"
+
+```bash
+openproject-cli work-packages list --type Vacancy --status New
+openproject-cli work-packages list --type Vacancy --status "In Progress"
+```
+
+### "What work packages are in the Travel project?"
 
 ```bash
 openproject-cli work-packages list --project 22
 ```
 
-### Agent: "Create a new task in IT project"
+### "Create a new task in IT project"
 
 ```bash
 openproject-cli work-packages create --project 11 --subject "Fix server SSL" \
-  --type 1 --description "Renew the Let's Encrypt certificate"
+  --type "Task" --description "Renew the Let's Encrypt certificate"
 ```
 
-### Agent: "Log 3 hours on work package 109"
+### "Show me the full details of work package 109"
+
+```bash
+openproject-cli work-packages show 109
+```
+
+### "Log 3 hours on work package 109"
 
 ```bash
 openproject-cli time-entries create --work-package 109 --hours 3 \
   --comment "Investigated 2FA issue"
+```
+
+### "Get all work packages as JSON"
+
+```bash
+openproject-cli work-packages list --all --page-size 200 --output json
 ```
