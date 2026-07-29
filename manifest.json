@@ -17,16 +17,22 @@
     }
   },
   "user_config": {
+    "openproject_api_key": {
+      "type": "string",
+      "title": "OPENPROJECT_API_KEY",
+      "description": "API token from My Account > Access tokens > API. Preferred over username/password.",
+      "sensitive": true
+    },
     "openproject_password": {
       "type": "string",
       "title": "OPENPROJECT_PASSWORD",
-      "description": "Your OpenProject password.",
+      "description": "Your OpenProject password. Only used if no API key is set.",
       "sensitive": true
     },
     "openproject_username": {
       "type": "string",
       "title": "OPENPROJECT_USERNAME",
-      "description": "Your OpenProject login email.",
+      "description": "Your OpenProject login email. Only used if no API key is set.",
       "sensitive": false
     },
     "openproject_url": {

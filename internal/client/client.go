@@ -2,6 +2,7 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,10 +12,16 @@ import (
 	"strings"
 )
 
-// Client wraps an HTTP client with session-based authentication.
+// Client wraps an HTTP client with OpenProject authentication.
+//
+// Two auth modes are supported. When apiKey is set the client uses HTTP Basic
+// auth with the literal username "apikey" and the token as the password, which
+// is OpenProject's documented API authentication scheme. Otherwise it falls
+// back to a session login through the web login form.
 type Client struct {
 	httpClient *http.Client
 	baseURL    string
+	apiKey     string
 	username   string
 	password   string
 	loggedIn   bool
@@ -23,7 +30,8 @@ type Client struct {
 }
 
 // New creates a new Client. It does not authenticate until Login() is called.
-func New(baseURL, username, password string) (*Client, error) {
+// If apiKey is non-empty it is used and username/password are ignored.
+func New(baseURL, apiKey, username, password string) (*Client, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, fmt.Errorf("create cookie jar: %w", err)
@@ -32,14 +40,38 @@ func New(baseURL, username, password string) (*Client, error) {
 	return &Client{
 		httpClient: &http.Client{Jar: jar},
 		baseURL:    strings.TrimRight(baseURL, "/"),
+		apiKey:     apiKey,
 		username:   username,
 		password:   password,
 	}, nil
 }
 
-// Login authenticates with the OpenProject server via the web login form.
-// It POSTs credentials with the CSRF token to /login, then verifies by fetching /api/v3/.
+// UsesAPIKey reports whether the client authenticates with an API key.
+func (c *Client) UsesAPIKey() bool {
+	return c.apiKey != ""
+}
+
+// Login authenticates with the OpenProject server.
+//
+// In API key mode this only verifies the token against /api/v3/users/me. In
+// session mode it POSTs the credentials with the CSRF token to /login first.
 func (c *Client) Login() error {
+	if c.apiKey == "" {
+		if err := c.sessionLogin(); err != nil {
+			return err
+		}
+	}
+
+	if err := c.verifyAuth(); err != nil {
+		return fmt.Errorf("login verification failed: %w", err)
+	}
+
+	c.loggedIn = true
+	return nil
+}
+
+// sessionLogin performs the legacy username/password login through the web form.
+func (c *Client) sessionLogin() error {
 	// Step 1: GET /login to obtain CSRF token and session cookie
 	loginURL := c.baseURL + "/login"
 	resp, err := c.httpClient.Get(loginURL)
@@ -79,45 +111,40 @@ func (c *Client) Login() error {
 		return fmt.Errorf("login failed: invalid credentials")
 	}
 
-	// Step 3: Verify by calling the API root
-	if err := c.verifyAuth(); err != nil {
-		return fmt.Errorf("login verification failed: %w", err)
-	}
-
-	c.loggedIn = true
 	return nil
 }
 
-// verifyAuth calls /api/v3/ to check the session and extract user info.
+// verifyAuth calls /api/v3/users/me to check the credentials and read user info.
 func (c *Client) verifyAuth() error {
-	apiURL := c.baseURL + "/api/v3/"
-	resp, err := c.httpClient.Get(apiURL)
+	resp, err := c.Get("/api/v3/users/me")
 	if err != nil {
-		return fmt.Errorf("api root: %w", err)
+		return fmt.Errorf("fetch current user: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("api root returned HTTP %d", resp.StatusCode)
-	}
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read api root: %w", err)
+		return fmt.Errorf("read current user: %w", err)
 	}
 
-	// Extract user info from hal+json response
-	userID := extractJSONString(body, `"href":"/api/v3/users/`)
-	userName := extractJSONString(body, `"title":"`)
-
-	if userID == "" {
-		// Try alternate pattern
-		userID = extractJSONString(body, `"id":`)
+	if resp.StatusCode == http.StatusUnauthorized {
+		return fmt.Errorf("invalid credentials (HTTP 401)")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("/api/v3/users/me returned HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
-	c.userID = 5 // default
-	c.userName = userName
-	if userName == "" {
+	var me struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(body, &me); err != nil {
+		return fmt.Errorf("parse current user: %w", err)
+	}
+
+	c.userID = me.ID
+	c.userName = me.Name
+	if c.userName == "" {
 		c.userName = c.username
 	}
 
@@ -141,57 +168,62 @@ func (c *Client) UserID() int {
 
 // Do performs an authenticated HTTP request and returns the response.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
+	c.applyAuth(req)
 	return c.httpClient.Do(req)
 }
 
 // Get is a convenience method for GET requests.
 func (c *Client) Get(path string) (*http.Response, error) {
-	u := c.baseURL + path
-	req, err := http.NewRequest(http.MethodGet, u, nil)
+	req, err := http.NewRequest(http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/hal+json, application/json")
-	return c.httpClient.Do(req)
+	return c.Do(req)
 }
 
 // Post is a convenience method for POST requests.
 func (c *Client) Post(path, contentType string, body io.Reader) (*http.Response, error) {
-	u := c.baseURL + path
-	req, err := http.NewRequest(http.MethodPost, u, body)
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+path, body)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", contentType)
 	c.setWriteHeaders(req)
-	return c.httpClient.Do(req)
+	return c.Do(req)
 }
 
 // Patch is a convenience method for PATCH requests.
 func (c *Client) Patch(path, contentType string, body io.Reader) (*http.Response, error) {
-	u := c.baseURL + path
-	req, err := http.NewRequest(http.MethodPatch, u, body)
+	req, err := http.NewRequest(http.MethodPatch, c.baseURL+path, body)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", contentType)
 	c.setWriteHeaders(req)
-	return c.httpClient.Do(req)
+	return c.Do(req)
 }
 
 // Delete is a convenience method for DELETE requests.
 func (c *Client) Delete(path string) (*http.Response, error) {
-	u := c.baseURL + path
-	req, err := http.NewRequest(http.MethodDelete, u, nil)
+	req, err := http.NewRequest(http.MethodDelete, c.baseURL+path, nil)
 	if err != nil {
 		return nil, err
 	}
 	c.setWriteHeaders(req)
-	return c.httpClient.Do(req)
+	return c.Do(req)
+}
+
+// applyAuth attaches the API key credentials to a request. In session mode the
+// cookie jar carries the authentication instead, so nothing is added.
+func (c *Client) applyAuth(req *http.Request) {
+	if c.apiKey != "" {
+		req.SetBasicAuth("apikey", c.apiKey)
+	}
 }
 
 // setWriteHeaders adds headers required for state-changing API requests.
-// OpenProject API v3 requires these for CSRF protection.
+// OpenProject API v3 requires these for CSRF protection in session mode.
 func (c *Client) setWriteHeaders(req *http.Request) {
 	req.Header.Set("Accept", "application/hal+json, application/json")
 	req.Header.Set("Referer", c.baseURL+"/")
@@ -218,33 +250,4 @@ func extractCSRF(html string) string {
 		return matches2[1]
 	}
 	return ""
-}
-
-// extractJSONString extracts a JSON string value after a given prefix.
-// This is a simple non-JSON-parsing extraction for quick lookups.
-func extractJSONString(body []byte, prefix string) string {
-	s := string(body)
-	idx := strings.Index(s, prefix)
-	if idx < 0 {
-		return ""
-	}
-	start := idx + len(prefix)
-	if start >= len(s) {
-		return ""
-	}
-	// Read until closing quote
-	var result strings.Builder
-	for i := start; i < len(s); i++ {
-		ch := s[i]
-		if ch == '"' {
-			// Check for escaped quote
-			if i > 0 && s[i-1] == '\\' {
-				result.WriteByte(ch)
-				continue
-			}
-			break
-		}
-		result.WriteByte(ch)
-	}
-	return result.String()
 }

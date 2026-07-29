@@ -23,8 +23,8 @@ func Run() int {
 		Version: version,
 		Long: `A standalone CLI tool for interacting with the OpenProject API v3.
 
-Requires OPENPROJECT_USERNAME and OPENPROJECT_PASSWORD environment variables
-to be set (or a .env file in the skill directory).`,
+Requires OPENPROJECT_API_KEY to be set (or a .env file in the skill directory).
+OPENPROJECT_USERNAME and OPENPROJECT_PASSWORD are still honoured as a fallback.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -74,7 +74,7 @@ func ensureAuthenticated() error {
 	if err != nil {
 		return fmt.Errorf("configuration error: %w", err)
 	}
-	c, err := client.New(cfg.BaseURL, cfg.Username, cfg.Password)
+	c, err := client.New(cfg.BaseURL, cfg.APIKey, cfg.Username, cfg.Password)
 	if err != nil {
 		return fmt.Errorf("client error: %w", err)
 	}

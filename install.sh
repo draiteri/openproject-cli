@@ -115,7 +115,7 @@ main() {
   printf '\nSkill deployed to %s.\n' "$dst"
   printf '  1. Add your credentials one of two ways:\n'
   printf '       - cp %s/.env.example %s/.env  and fill it in, or\n' "$dst" "$dst"
-  printf '       - export OPENPROJECT_USERNAME / OPENPROJECT_PASSWORD in your shell\n'
+  printf '       - export OPENPROJECT_API_KEY in your shell\n'
   printf '  2. Run: %s/bin/%s auth status\n' "$dst" "$SKILL_LEAF"
 
   print_syncthing_hint "$dst"

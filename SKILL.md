@@ -48,17 +48,21 @@ Set these environment variables (or create a `.env` file in the skill directory
 from `.env.example`):
 
 ```bash
-export OPENPROJECT_USERNAME="your-email@example.com"
-export OPENPROJECT_PASSWORD="your-password"
+# Create the token in OpenProject: My Account > Access tokens > API
+export OPENPROJECT_API_KEY="your-api-token"
 # Optional, defaults to the instance below:
 export OPENPROJECT_URL="https://openproject.danieleraiteri.duckdns.org"
 ```
+
+`OPENPROJECT_USERNAME` / `OPENPROJECT_PASSWORD` are still honoured as a
+fallback when no API key is set, but the API key is preferred: it avoids the
+web login form entirely and is not affected by session or CSRF handling.
 
 ### Verify Authentication
 
 ```bash
 openproject-cli auth status
-# → Logged in as Daniele Raiteri (ID 5)
+# → Logged in as Daniele Raiteri (ID 5) via API key
 ```
 
 ## Commands

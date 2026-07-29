@@ -9,15 +9,14 @@ Designed to be used as a skill for AI coding agents (Claude/pi).
 - **Work Packages** — List, show, create, update, and delete work packages (tasks, bugs, features, etc.)
 - **Users** — List users
 - **Time Entries** — List and create time entries
-- **Session-based auth** — Authenticates via the OpenProject web login, stores session cookies
+- **API key auth** — Authenticates with an OpenProject API token (HTTP Basic `apikey:<token>`), with a legacy session-login fallback
 - **Agent-friendly output** — Tabular and JSON output modes for easy parsing
 
 ## Quick Start
 
 ```bash
-# Set credentials
-export OPENPROJECT_USERNAME="your-email@example.com"
-export OPENPROJECT_PASSWORD="your-password"
+# Set credentials (My Account > Access tokens > API in OpenProject)
+export OPENPROJECT_API_KEY="your-api-token"
 
 # Run the CLI
 ./bin/openproject-cli --help
@@ -45,8 +44,9 @@ The CLI reads these environment variables:
 
 | Variable | Description |
 |---|---|
-| `OPENPROJECT_USERNAME` | OpenProject login email |
-| `OPENPROJECT_PASSWORD` | OpenProject password |
+| `OPENPROJECT_API_KEY` | API token from *My Account > Access tokens > API*. Preferred. |
+| `OPENPROJECT_USERNAME` | OpenProject login email. Fallback, only used if no API key is set. |
+| `OPENPROJECT_PASSWORD` | OpenProject password. Fallback, only used if no API key is set. |
 | `OPENPROJECT_URL` | Base URL (default: `https://openproject.danieleraiteri.duckdns.org`) |
 
 A `.env` file in the skill directory is also supported (see `.env.example`).
