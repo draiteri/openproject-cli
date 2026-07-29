@@ -6,7 +6,7 @@ Designed to be used as a skill for AI coding agents (Claude/pi).
 ## Features
 
 - **Projects** — List and view projects
-- **Work Packages** — List, show, create, update, and delete work packages (tasks, bugs, features, etc.)
+- **Work Packages** — List, show, create, update, comment on, attach files to, and delete work packages (tasks, bugs, features, etc.)
 - **Users** — List users
 - **Time Entries** — List and create time entries
 - **API key auth** — Authenticates with an OpenProject API token (HTTP Basic `apikey:<token>`), with a legacy session-login fallback
@@ -33,6 +33,8 @@ openproject-cli work-packages list  — List work packages (optionally --project
 openproject-cli work-packages show  — Show work package details
 openproject-cli work-packages create — Create a work package
 openproject-cli work-packages update — Update a work package
+openproject-cli work-packages comment — Add a comment to a work package
+openproject-cli work-packages attach — Attach a file to a work package
 openproject-cli work-packages delete — Delete a work package
 openproject-cli time-entries list   — List time entries
 openproject-cli time-entries create — Create a time entry

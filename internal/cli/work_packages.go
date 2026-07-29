@@ -5,8 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 
@@ -18,7 +23,7 @@ func newWorkPackagesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "work-packages",
 		Short: "Manage work packages",
-		Long:  `List, show, create, update, and delete work packages.`,
+		Long:  `List, show, create, update, comment on, attach files to, and delete work packages.`,
 	}
 
 	// --- list ---
@@ -471,6 +476,156 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 	updateCmd.Flags().StringP("assignee", "a", "", "New assignee ID")
 	cmd.AddCommand(updateCmd)
 
+	// --- comment ---
+	commentCmd := &cobra.Command{
+		Use:   "comment <id> <text>",
+		Short: "Add a comment to a work package",
+		Long: `Add a comment to a work package's activity stream.
+
+The comment body is interpreted as markdown. Use --no-notify to add the
+comment without notifying watchers, the author, and the assignee.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c := getClient()
+			if c == nil {
+				return fmt.Errorf("not authenticated")
+			}
+
+			wpID, text := args[0], args[1]
+			if text == "" {
+				return fmt.Errorf("comment text must not be empty")
+			}
+
+			noNotify, _ := cmd.Flags().GetBool("no-notify")
+
+			bodyJSON, err := json.Marshal(map[string]interface{}{
+				"comment": map[string]interface{}{
+					"raw": text,
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("marshal request: %w", err)
+			}
+
+			path := fmt.Sprintf("/api/v3/work_packages/%s/activities", url.PathEscape(wpID))
+			if noNotify {
+				path += "?notify=false"
+			}
+
+			resp, err := c.Post(path, "application/json", bytes.NewReader(bodyJSON))
+			if err != nil {
+				return fmt.Errorf("add comment: %w", err)
+			}
+			defer resp.Body.Close()
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return fmt.Errorf("read response: %w", err)
+			}
+
+			if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("comment failed (HTTP %d): %s", resp.StatusCode, string(body))
+			}
+
+			if outputFlag(cmd) == "json" {
+				fmt.Fprintln(cmd.OutOrStdout(), string(body))
+				return nil
+			}
+
+			var created struct {
+				ID int `json:"id"`
+			}
+			if err := json.Unmarshal(body, &created); err != nil {
+				return fmt.Errorf("parse response: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Added comment #%d to work package #%s\n", created.ID, wpID)
+			return nil
+		},
+	}
+	commentCmd.Flags().Bool("no-notify", false, "Do not notify watchers, author, and assignee")
+	cmd.AddCommand(commentCmd)
+
+	// --- attach ---
+	attachCmd := &cobra.Command{
+		Use:   "attach <id> <file>",
+		Short: "Attach a file to a work package",
+		Long: `Upload a local file and attach it to a work package.
+
+By default the attachment keeps the local file's base name; use --name to
+store it under a different name.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c := getClient()
+			if c == nil {
+				return fmt.Errorf("not authenticated")
+			}
+
+			wpID, filePath := args[0], args[1]
+			description, _ := cmd.Flags().GetString("description")
+			fileName, _ := cmd.Flags().GetString("name")
+			if fileName == "" {
+				fileName = filepath.Base(filePath)
+			}
+
+			f, err := os.Open(filePath)
+			if err != nil {
+				return fmt.Errorf("open file: %w", err)
+			}
+			defer f.Close()
+
+			info, err := f.Stat()
+			if err != nil {
+				return fmt.Errorf("stat file: %w", err)
+			}
+			if info.IsDir() {
+				return fmt.Errorf("%s is a directory, not a file", filePath)
+			}
+
+			body, contentType, err := buildAttachmentBody(f, fileName, description)
+			if err != nil {
+				return err
+			}
+
+			path := fmt.Sprintf("/api/v3/work_packages/%s/attachments", url.PathEscape(wpID))
+			resp, err := c.Post(path, contentType, body)
+			if err != nil {
+				return fmt.Errorf("upload attachment: %w", err)
+			}
+			defer resp.Body.Close()
+
+			respBody, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return fmt.Errorf("read response: %w", err)
+			}
+
+			if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("attach failed (HTTP %d): %s", resp.StatusCode, string(respBody))
+			}
+
+			if outputFlag(cmd) == "json" {
+				fmt.Fprintln(cmd.OutOrStdout(), string(respBody))
+				return nil
+			}
+
+			var created struct {
+				ID       int    `json:"id"`
+				FileName string `json:"fileName"`
+				FileSize int64  `json:"fileSize"`
+			}
+			if err := json.Unmarshal(respBody, &created); err != nil {
+				return fmt.Errorf("parse response: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Attached %s (%d bytes) to work package #%s as attachment #%d\n",
+				created.FileName, created.FileSize, wpID, created.ID)
+			return nil
+		},
+	}
+	attachCmd.Flags().StringP("description", "d", "", "Description of the attachment")
+	attachCmd.Flags().StringP("name", "n", "", "Store under this file name instead of the local base name")
+	cmd.AddCommand(attachCmd)
+
 	// --- delete ---
 	deleteCmd := &cobra.Command{
 		Use:   "delete <id>",
@@ -501,6 +656,68 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 	cmd.AddCommand(deleteCmd)
 
 	return cmd
+}
+
+// buildAttachmentBody assembles the multipart/form-data body the attachments
+// endpoint requires: exactly two parts, "metadata" (application/json, carrying
+// at least fileName) and "file" (the raw bytes). OpenProject takes the stored
+// name from the metadata part, not from the file part's Content-Disposition.
+func buildAttachmentBody(file io.Reader, fileName, description string) (io.Reader, string, error) {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+
+	metadata := map[string]interface{}{
+		"fileName": fileName,
+	}
+	if description != "" {
+		metadata["description"] = map[string]interface{}{
+			"format": "plain",
+			"raw":    description,
+		}
+	}
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return nil, "", fmt.Errorf("marshal attachment metadata: %w", err)
+	}
+
+	metaHeader := make(textproto.MIMEHeader)
+	metaHeader.Set("Content-Disposition", `form-data; name="metadata"`)
+	metaHeader.Set("Content-Type", "application/json")
+	metaPart, err := mw.CreatePart(metaHeader)
+	if err != nil {
+		return nil, "", fmt.Errorf("create metadata part: %w", err)
+	}
+	if _, err := metaPart.Write(metadataJSON); err != nil {
+		return nil, "", fmt.Errorf("write metadata part: %w", err)
+	}
+
+	// CreateFormFile would hardcode application/octet-stream, so build the
+	// part by hand to send a content type matching the file extension.
+	fileHeader := make(textproto.MIMEHeader)
+	fileHeader.Set("Content-Disposition",
+		fmt.Sprintf(`form-data; name="file"; filename=%q`, fileName))
+	fileHeader.Set("Content-Type", contentTypeFor(fileName))
+	filePart, err := mw.CreatePart(fileHeader)
+	if err != nil {
+		return nil, "", fmt.Errorf("create file part: %w", err)
+	}
+	if _, err := io.Copy(filePart, file); err != nil {
+		return nil, "", fmt.Errorf("write file part: %w", err)
+	}
+
+	if err := mw.Close(); err != nil {
+		return nil, "", fmt.Errorf("close multipart writer: %w", err)
+	}
+
+	return &buf, mw.FormDataContentType(), nil
+}
+
+// contentTypeFor guesses a MIME type from a file name's extension.
+func contentTypeFor(fileName string) string {
+	if ct := mime.TypeByExtension(filepath.Ext(fileName)); ct != "" {
+		return ct
+	}
+	return "application/octet-stream"
 }
 
 // lookupStatusID fetches the statuses from the API and finds the ID for a given name.

@@ -1,6 +1,6 @@
 ---
 name: openproject-cli
-description: "Interact with OpenProject (projects, work packages, users, time entries) via the API. Trigger phrases: `openproject`, `work packages`, `projects`, `tasks`, `create task`, `create work package`, `list projects`, `list work packages`, `show work package`, `update work package`, `delete work package`, `time entries`, `applications`, `vacancies`, `rejected`."
+description: "Interact with OpenProject (projects, work packages, users, time entries) via the API. Trigger phrases: `openproject`, `work packages`, `projects`, `tasks`, `create task`, `create work package`, `list projects`, `list work packages`, `show work package`, `update work package`, `delete work package`, `comment on task`, `add comment`, `attach file`, `upload attachment`, `time entries`, `applications`, `vacancies`, `rejected`."
 author: "Daniele Raiteri"
 license: "Apache-2.0"
 argument-hint: "<command> [args] | install cli"
@@ -124,6 +124,23 @@ openproject-cli work-packages update 60 --subject "New title"        # Rename
 openproject-cli work-packages delete 60                              # Delete
 ```
 
+**Comment** — adds a markdown comment to the work package's activity stream.
+
+```bash
+openproject-cli work-packages comment 60 "Deployed to staging, ready for review"
+openproject-cli work-packages comment 60 "Silent note" --no-notify   # Skip notifications
+openproject-cli work-packages comment 60 "Done" --output json        # JSON output
+```
+
+**Attach** — uploads a local file as an attachment.
+
+```bash
+openproject-cli work-packages attach 60 ./build.log                  # Attach a file
+openproject-cli work-packages attach 60 ./chart.png \
+  --description "Latency after the fix"                              # With a description
+openproject-cli work-packages attach 60 ./out.txt --name "report.txt" # Store under another name
+```
+
 ### Time Entries
 
 ```bash
@@ -144,8 +161,9 @@ openproject-cli time-entries create --work-package 60 --hours 2.5 \        # Log
 
 ## Unique Capabilities
 
-- **Session-based auth** — Authenticates via web login, handles CSRF automatically
+- **API key auth** — HTTP Basic `apikey:<token>`, with a legacy session-login fallback
 - **Full CRUD** — Create, read, update, and delete work packages
+- **Collaboration** — Comment on work packages and attach files to them
 - **Filter by name** — `--status Rejected` and `--type Vacancy` use human-readable names, not IDs
 - **See everything** — `--all` bypasses the default "open only" filter to show closed/rejected items
 - **Pagination** — `--page` and `--page-size` control result size
