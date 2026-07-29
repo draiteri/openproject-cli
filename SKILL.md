@@ -109,6 +109,10 @@ openproject-cli work-packages list --output json                     # JSON outp
 
 **Show / Create / Update / Delete:**
 
+`--parent <id>` sets the hierarchy at creation time, so a child is never
+briefly orphaned. The command fails loudly if the server does not record the
+parent it was given.
+
 ```bash
 openproject-cli work-packages show 60                                # Show full details
 openproject-cli work-packages show 60 --output json                  # Show as JSON
@@ -117,6 +121,8 @@ openproject-cli work-packages create --project 22 --subject "Do X" \
   --description "Details here" --type "Vacancy"                      # Create with type name
 openproject-cli work-packages create --project 11 --subject "Bug" \
   --type "Task"                                                      # Create with type name
+openproject-cli work-packages create --project 6 --subject "Role — Co" \
+  --type "Vacancy" --parent 123                                      # Create as child of #123
 openproject-cli work-packages update 60 --status "Rejected"          # Update status by name
 openproject-cli work-packages update 60 --status "14"                # Update status by ID also works
 openproject-cli work-packages update 60 --assignee 5                 # Assign to user

@@ -294,7 +294,10 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 	createCmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a work package",
-		Long:  `Create a new work package in a project. Requires --project and --subject.`,
+		Long: `Create a new work package in a project. Requires --project and --subject.
+
+Use --parent to attach the new work package to an existing one at creation
+time, rather than creating it orphaned and re-parenting it afterwards.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := getClient()
 			if c == nil {
@@ -305,6 +308,7 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 			subject, _ := cmd.Flags().GetString("subject")
 			wpType, _ := cmd.Flags().GetString("type")
 			description, _ := cmd.Flags().GetString("description")
+			parentID, _ := cmd.Flags().GetString("parent")
 
 			if projectID == "" {
 				return fmt.Errorf("--project is required")
@@ -318,6 +322,8 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 				"subject":     subject,
 				"lockVersion": 0,
 			}
+
+			links := make(map[string]interface{})
 			if wpType != "" {
 				// Try to resolve type name to ID
 				typeID, err := lookupTypeID(c, wpType)
@@ -329,12 +335,22 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 						return fmt.Errorf("resolve type name: %w", err)
 					}
 				}
-				bodyMap["_links"] = map[string]interface{}{
-					"type": map[string]interface{}{
-						"href": fmt.Sprintf("/api/v3/types/%d", typeID),
-					},
+				links["type"] = map[string]interface{}{
+					"href": fmt.Sprintf("/api/v3/types/%d", typeID),
 				}
 			}
+			if parentID != "" {
+				if _, err := strconv.Atoi(parentID); err != nil {
+					return fmt.Errorf("--parent must be a work package ID, got %q", parentID)
+				}
+				links["parent"] = map[string]interface{}{
+					"href": "/api/v3/work_packages/" + parentID,
+				}
+			}
+			if len(links) > 0 {
+				bodyMap["_links"] = links
+			}
+
 			if description != "" {
 				bodyMap["description"] = map[string]interface{}{
 					"format": "markdown",
@@ -366,12 +382,30 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 			var created struct {
 				ID      int    `json:"id"`
 				Subject string `json:"subject"`
+				Links   struct {
+					Parent *struct {
+						Href  string `json:"href"`
+						Title string `json:"title"`
+					} `json:"parent"`
+				} `json:"_links"`
 			}
 			if err := json.Unmarshal(body, &created); err != nil {
 				return fmt.Errorf("parse response: %w", err)
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Created work package #%d: %s\n", created.ID, created.Subject)
+
+			// Echo the parent the server actually recorded, so a silently
+			// dropped --parent is visible rather than producing an orphan.
+			if parentID != "" {
+				if created.Links.Parent != nil && created.Links.Parent.Href != "" {
+					fmt.Fprintf(cmd.OutOrStdout(), "  Parent: #%s %s\n",
+						parentID, created.Links.Parent.Title)
+				} else {
+					return fmt.Errorf("work package #%d was created but the server did not record parent #%s — it is orphaned",
+						created.ID, parentID)
+				}
+			}
 			return nil
 		},
 	}
@@ -379,6 +413,7 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 	createCmd.Flags().StringP("subject", "s", "", "Subject (required)")
 	createCmd.Flags().StringP("type", "t", "", "Type name or ID (e.g. 'Task', 'Vacancy', '1')")
 	createCmd.Flags().StringP("description", "d", "", "Description in markdown")
+	createCmd.Flags().String("parent", "", "Parent work package ID")
 	cmd.AddCommand(createCmd)
 
 	// --- update ---
