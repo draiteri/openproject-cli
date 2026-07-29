@@ -420,8 +420,15 @@ time, rather than creating it orphaned and re-parenting it afterwards.`,
 	updateCmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update a work package",
-		Long:  `Update an existing work package's subject, status, or assignee.`,
-		Args:  cobra.ExactArgs(1),
+		Long: `Update an existing work package's subject, description, status,
+assignee, or parent.
+
+--description replaces the description outright; it does not append. Use
+"work-packages comment" for progress notes that should preserve history.
+
+--parent re-parents the work package. Pass --parent none to detach it and
+make it a top-level item.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := getClient()
 			if c == nil {
@@ -432,9 +439,16 @@ time, rather than creating it orphaned and re-parenting it afterwards.`,
 			subject, _ := cmd.Flags().GetString("subject")
 			statusName, _ := cmd.Flags().GetString("status")
 			assigneeID, _ := cmd.Flags().GetString("assignee")
+			description, _ := cmd.Flags().GetString("description")
+			parentID, _ := cmd.Flags().GetString("parent")
 
-			if subject == "" && statusName == "" && assigneeID == "" {
-				return fmt.Errorf("at least one of --subject, --status, --assignee is required")
+			// Distinguish "flag absent" from "flag set to empty string", so an
+			// explicitly blank description can clear the field.
+			descriptionSet := cmd.Flags().Changed("description")
+
+			if subject == "" && statusName == "" && assigneeID == "" &&
+				!descriptionSet && parentID == "" {
+				return fmt.Errorf("at least one of --subject, --description, --status, --assignee, --parent is required")
 			}
 
 			// Fetch current lockVersion
@@ -457,7 +471,13 @@ time, rather than creating it orphaned and re-parenting it afterwards.`,
 			if subject != "" {
 				bodyMap["subject"] = subject
 			}
-			if statusName != "" || assigneeID != "" {
+			if descriptionSet {
+				bodyMap["description"] = map[string]interface{}{
+					"format": "markdown",
+					"raw":    description,
+				}
+			}
+			if statusName != "" || assigneeID != "" || parentID != "" {
 				links := make(map[string]interface{})
 				if statusName != "" {
 					// Resolve status name to ID
@@ -477,6 +497,19 @@ time, rather than creating it orphaned and re-parenting it afterwards.`,
 				if assigneeID != "" {
 					links["assignee"] = map[string]interface{}{
 						"href": fmt.Sprintf("/api/v3/users/%s", assigneeID),
+					}
+				}
+				if parentID != "" {
+					// A null href detaches the work package from its parent.
+					if equalFold(parentID, "none") || equalFold(parentID, "null") {
+						links["parent"] = map[string]interface{}{"href": nil}
+					} else {
+						if _, err := strconv.Atoi(parentID); err != nil {
+							return fmt.Errorf("--parent must be a work package ID or \"none\", got %q", parentID)
+						}
+						links["parent"] = map[string]interface{}{
+							"href": "/api/v3/work_packages/" + parentID,
+						}
 					}
 				}
 				bodyMap["_links"] = links
@@ -507,6 +540,8 @@ time, rather than creating it orphaned and re-parenting it afterwards.`,
 		},
 	}
 	updateCmd.Flags().StringP("subject", "s", "", "New subject")
+	updateCmd.Flags().StringP("description", "d", "", "New description in markdown (replaces the existing one)")
+	updateCmd.Flags().String("parent", "", "New parent work package ID, or \"none\" to detach")
 	updateCmd.Flags().StringP("status", "t", "", "New status name or ID (e.g. 'Rejected', '14')")
 	updateCmd.Flags().StringP("assignee", "a", "", "New assignee ID")
 	cmd.AddCommand(updateCmd)

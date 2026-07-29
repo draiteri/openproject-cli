@@ -127,8 +127,14 @@ openproject-cli work-packages update 60 --status "Rejected"          # Update st
 openproject-cli work-packages update 60 --status "14"                # Update status by ID also works
 openproject-cli work-packages update 60 --assignee 5                 # Assign to user
 openproject-cli work-packages update 60 --subject "New title"        # Rename
+openproject-cli work-packages update 60 --description "New text"     # Replace description
+openproject-cli work-packages update 60 --parent 123                 # Re-parent under #123
+openproject-cli work-packages update 60 --parent none                # Detach from parent
 openproject-cli work-packages delete 60                              # Delete
 ```
+
+`update --description` **replaces** the description; it does not append. For
+progress notes that should preserve history, use `comment` instead.
 
 **Comment** — adds a markdown comment to the work package's activity stream.
 
