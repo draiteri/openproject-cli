@@ -3,25 +3,12 @@ set -euo pipefail
 
 SKILL_LEAF="openproject-cli"
 
-# Normalize a deploy path to the actual skill folder. Prints target on stdout.
-#
-# A path that already ends in the skill leaf is taken as final whatever the
-# layout above it — that covers the standard <root>/.claude/skills/<leaf> as
-# well as flat layouts like <root>/my_skills/<leaf>. Otherwise the .claude
-# convention is assumed and the missing components are appended.
+# Normalize the given path: expand ~ and strip trailing slash. No longer
+# appends any .claude/skills/ suffix — the caller supplies the exact destination.
 resolve_deploy_dir() {
   local input="${1%/}"                 # strip one trailing slash
   input="${input/#\~/$HOME}"           # expand leading ~
-  case "$input" in
-    */"$SKILL_LEAF") printf '%s\n' "$input" ;;
-    */.claude/skills/*)
-      printf 'ERROR: refusing to deploy: %s — skill folder must be named %s\n' \
-        "$input" "$SKILL_LEAF" >&2
-      return 1 ;;
-    */.claude/skills) printf '%s\n' "$input/$SKILL_LEAF" ;;
-    */.claude)        printf '%s\n' "$input/skills/$SKILL_LEAF" ;;
-    *)                printf '%s\n' "$input/.claude/skills/$SKILL_LEAF" ;;
-  esac
+  printf '%s\n' "$input"
 }
 
 # Version the source tree declares — the single source of truth we build to.
@@ -66,14 +53,14 @@ print_syncthing_hint() {
 
 main() {
   local repo; repo="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  local default="$HOME/.claude/skills/$SKILL_LEAF"
+  local default="$(pwd)"
 
   # Accept the destination as an argument so redeploys can be scripted;
   # fall back to the interactive prompt when none is given.
   local answer="${1:-}"
   if [[ -z "$answer" ]]; then
     printf 'Deploy %s skill to which directory?\n' "$SKILL_LEAF"
-    printf '  (you may give <path>, <path>/.claude, <path>/.claude/skills, or the full path)\n'
+    printf '  (give the exact destination folder — it is used verbatim)\n'
     printf '  [default: %s]: ' "$default"
     read -r answer
     [[ -z "$answer" ]] && answer="$default"

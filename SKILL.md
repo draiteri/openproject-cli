@@ -30,6 +30,24 @@ where `<skill-dir>` is the directory this `SKILL.md` lives in. All command
 examples below are written as `openproject-cli ...` for brevity — read that as
 the bundled `<skill-dir>/bin/openproject-cli`.
 
+### Consumers: never copy this path
+
+This skill is **vendored** — it is installed into each host's skill tree by its
+`install.sh`, and its absolute location differs per host and per deployment. Any
+copy of that absolute path made elsewhere goes stale the moment the skill is
+redeployed or a mount point changes, and it fails *silently*: the shell just
+reports "no such file".
+
+So, for any other skill or rulebook that drives this CLI:
+
+- **Do not restate the binary's path.** Reference this skill by name
+  (`openproject-cli`) and load it for the mechanics — the path is defined here and
+  nowhere else.
+- **Do not paste a resolved path into a rulebook** after working one out at
+  runtime. It is correct only for the host you resolved it on.
+- The `<skill-dir>` placeholder is resolved **at use time**, in the Bash call that
+  needs it. It is not a literal to be copied into another file.
+
 If `--version` fails (e.g. the prebuilt binary was built for a different
 architecture), run the bundled `install.sh` from the skill folder to rebuild
 (`go` required only in that fallback case).
