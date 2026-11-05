@@ -19,6 +19,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// pageParams builds the OpenProject pagination query. The API's offset is the
+// 1-based page number, not a row index, so it takes the page unchanged.
+func pageParams(page, pageSize int) url.Values {
+	params := url.Values{}
+	params.Set("offset", strconv.Itoa(page))
+	params.Set("pageSize", strconv.Itoa(pageSize))
+	return params
+}
+
 func newWorkPackagesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "work-packages",
@@ -103,9 +112,7 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 			// Build URL
 			path := "/api/v3/work_packages"
 
-			params := url.Values{}
-			params.Set("offset", strconv.Itoa((page-1)*pageSize+1))
-			params.Set("pageSize", strconv.Itoa(pageSize))
+			params := pageParams(page, pageSize)
 
 			if len(filters) > 0 {
 				filterJSON, err := json.Marshal(filters)

@@ -108,6 +108,29 @@ func TestBuildAttachmentBodyOmitsEmptyDescription(t *testing.T) {
 	}
 }
 
+// TestPageParams pins offset to the page number. Treating it as a row index
+// sends page 2 of 200 as offset=201, which is past the end and returns no rows.
+func TestPageParams(t *testing.T) {
+	tests := []struct {
+		page, pageSize int
+		wantOffset     string
+		wantPageSize   string
+	}{
+		{1, 20, "1", "20"},
+		{2, 200, "2", "200"},
+		{4, 50, "4", "50"},
+	}
+	for _, tt := range tests {
+		got := pageParams(tt.page, tt.pageSize)
+		if o := got.Get("offset"); o != tt.wantOffset {
+			t.Errorf("pageParams(%d, %d) offset = %q, want %q", tt.page, tt.pageSize, o, tt.wantOffset)
+		}
+		if s := got.Get("pageSize"); s != tt.wantPageSize {
+			t.Errorf("pageParams(%d, %d) pageSize = %q, want %q", tt.page, tt.pageSize, s, tt.wantPageSize)
+		}
+	}
+}
+
 func TestContentTypeFor(t *testing.T) {
 	tests := []struct {
 		fileName string

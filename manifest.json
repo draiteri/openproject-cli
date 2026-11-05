@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "openproject-cli",
   "display_name": "OpenProject",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Interact with OpenProject projects, work packages, users, and time entries via the API.",
   "author": {
     "name": "Daniele Raiteri"

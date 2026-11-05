@@ -196,7 +196,7 @@ openproject-cli time-entries create --work-package 60 --hours 2.5 \        # Log
 - **Collaboration** — Comment on work packages and attach files to them
 - **Filter by name** — `--status Rejected` and `--type Vacancy` use human-readable names, not IDs
 - **See everything** — `--all` bypasses the default "open only" filter to show closed/rejected items
-- **Pagination** — `--page` and `--page-size` control result size
+- **Pagination** — `--page` (1-based) and `--page-size` (max 200) select a slice; the header reports `page N/M`
 - **JSON output** — All list/show commands support `--output json` for programmatic use
 - **No dependencies** — Single self-contained binary in the skill directory
 - **Agent-friendly tables** — Default output shows ID, Subject, Status, Type, and Project columns
@@ -244,6 +244,11 @@ openproject-cli time-entries create --work-package 109 --hours 3 \
 
 ### "Get all work packages as JSON"
 
+One call returns at most 200 rows, so walk the pages until you have `total` rows.
+The header of the table output shows the page count (`page 1/4`).
+
 ```bash
-openproject-cli work-packages list --all --page-size 200 --output json
+openproject-cli work-packages list --all --page-size 200 --page 1 --output json
+openproject-cli work-packages list --all --page-size 200 --page 2 --output json
+# ...continue through the last page
 ```
