@@ -49,14 +49,9 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 			statusFilter, _ := cmd.Flags().GetString("status")
 			typeFilter, _ := cmd.Flags().GetString("type")
 			showAll, _ := cmd.Flags().GetBool("all")
-			page, _ := cmd.Flags().GetInt("page")
-			pageSize, _ := cmd.Flags().GetInt("page-size")
-
-			if page < 1 {
-				page = 1
-			}
-			if pageSize < 1 || pageSize > 200 {
-				pageSize = 20
+			page, pageSize, err := pageFlags(cmd)
+			if err != nil {
+				return err
 			}
 
 			// Build filters
@@ -103,9 +98,7 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 			// Build URL
 			path := "/api/v3/work_packages"
 
-			params := url.Values{}
-			params.Set("offset", strconv.Itoa((page-1)*pageSize+1))
-			params.Set("pageSize", strconv.Itoa(pageSize))
+			params := pageParams(page, pageSize)
 
 			if len(filters) > 0 {
 				filterJSON, err := json.Marshal(filters)
@@ -122,15 +115,9 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 
 			path = path + "?" + params.Encode()
 
-			resp, err := c.Get(path)
+			body, err := getOK(c, path, "work packages")
 			if err != nil {
-				return fmt.Errorf("fetch work packages: %w", err)
-			}
-			defer resp.Body.Close()
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return fmt.Errorf("read response: %w", err)
+				return err
 			}
 
 			if outputFlag(cmd) == "json" {
@@ -160,11 +147,8 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 				return fmt.Errorf("parse response: %w", err)
 			}
 
-			// Calculate total pages
-			totalPages := (result.Total + pageSize - 1) / pageSize
-
 			fmt.Fprintf(cmd.OutOrStdout(), "Work Packages (%d total, page %d/%d):\n",
-				result.Total, page, totalPages)
+				result.Total, page, pageCount(result.Total, pageSize))
 			header := []string{"ID", "Subject", "Status", "Type", "Project"}
 			var rows [][]string
 			for _, wp := range result.Embedded.Elements {
@@ -203,8 +187,7 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 	listCmd.Flags().StringP("status", "s", "", "Filter by status name (e.g. 'Rejected', 'New')")
 	listCmd.Flags().StringP("type", "t", "", "Filter by type name (e.g. 'Vacancy', 'Task')")
 	listCmd.Flags().BoolP("all", "a", false, "Show all work packages (including closed)")
-	listCmd.Flags().IntP("page", "", 1, "Page number")
-	listCmd.Flags().IntP("page-size", "", 20, "Items per page (max 200)")
+	addPageFlags(listCmd, 20)
 	cmd.AddCommand(listCmd)
 
 	// --- show ---
@@ -219,15 +202,9 @@ Type names: Task, Milestone, Summary task, Event, Shopping, Vacancy`,
 				return fmt.Errorf("not authenticated")
 			}
 
-			resp, err := c.Get("/api/v3/work_packages/" + args[0])
+			body, err := getOK(c, "/api/v3/work_packages/"+args[0], "work package")
 			if err != nil {
-				return fmt.Errorf("fetch work package: %w", err)
-			}
-			defer resp.Body.Close()
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return fmt.Errorf("read response: %w", err)
+				return err
 			}
 
 			if outputFlag(cmd) == "json" {
@@ -452,15 +429,13 @@ make it a top-level item.`,
 			}
 
 			// Fetch current lockVersion
-			resp, err := c.Get("/api/v3/work_packages/" + wpID)
+			body, err := getOK(c, "/api/v3/work_packages/"+wpID, "work package")
 			if err != nil {
-				return fmt.Errorf("fetch work package: %w", err)
+				return err
 			}
 			var current struct {
 				LockVersion int `json:"lockVersion"`
 			}
-			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
 			if err := json.Unmarshal(body, &current); err != nil {
 				return fmt.Errorf("parse current work package: %w", err)
 			}
@@ -793,15 +768,9 @@ func contentTypeFor(fileName string) string {
 // lookupStatusID fetches the statuses from the API and finds the ID for a given name.
 // If the name matches multiple statuses, returns an error.
 func lookupStatusID(c *client.Client, name string) (int, error) {
-	resp, err := c.Get("/api/v3/statuses")
+	body, err := getOK(c, "/api/v3/statuses", "statuses")
 	if err != nil {
-		return 0, fmt.Errorf("fetch statuses: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, fmt.Errorf("read statuses: %w", err)
+		return 0, err
 	}
 
 	var result struct {
@@ -837,15 +806,9 @@ func lookupStatusID(c *client.Client, name string) (int, error) {
 
 // lookupTypeID fetches the types from the API and finds the ID for a given name.
 func lookupTypeID(c *client.Client, name string) (int, error) {
-	resp, err := c.Get("/api/v3/types")
+	body, err := getOK(c, "/api/v3/types", "types")
 	if err != nil {
-		return 0, fmt.Errorf("fetch types: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, fmt.Errorf("read types: %w", err)
+		return 0, err
 	}
 
 	var result struct {
