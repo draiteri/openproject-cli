@@ -10,6 +10,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// timeEntryFilters builds the list filters. OpenProject has no per-project or
+// per-work-package time entry routes, so both go through the filters parameter.
+func timeEntryFilters(projectID, wpID string) []map[string]interface{} {
+	equals := func(name, value string) map[string]interface{} {
+		return map[string]interface{}{
+			name: map[string]interface{}{"operator": "=", "values": []string{value}},
+		}
+	}
+
+	var filters []map[string]interface{}
+	if projectID != "" {
+		filters = append(filters, equals("project_id", projectID))
+	}
+	if wpID != "" {
+		filters = append(filters, equals("entity_type", "WorkPackage"), equals("entity_id", wpID))
+	}
+	return filters
+}
+
 func newTimeEntriesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "time-entries",
@@ -21,7 +40,7 @@ func newTimeEntriesCmd() *cobra.Command {
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List time entries",
-		Long:  `List time entries, optionally filtered by project, work package, or date range.`,
+		Long:  `List time entries, optionally filtered by project and work package.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := getClient()
 			if c == nil {
@@ -31,22 +50,23 @@ func newTimeEntriesCmd() *cobra.Command {
 			projectID, _ := cmd.Flags().GetString("project")
 			wpID, _ := cmd.Flags().GetString("work-package")
 
-			path := "/api/v3/time_entries"
-			if projectID != "" {
-				path = fmt.Sprintf("/api/v3/projects/%s/time_entries", projectID)
-			} else if wpID != "" {
-				path = fmt.Sprintf("/api/v3/work_packages/%s/time_entries", wpID)
+			page, pageSize, err := pageFlags(cmd)
+			if err != nil {
+				return err
 			}
 
-			resp, err := c.Get(path)
-			if err != nil {
-				return fmt.Errorf("fetch time entries: %w", err)
+			params := pageParams(page, pageSize)
+			if filters := timeEntryFilters(projectID, wpID); len(filters) > 0 {
+				filterJSON, err := json.Marshal(filters)
+				if err != nil {
+					return fmt.Errorf("marshal filters: %w", err)
+				}
+				params.Set("filters", string(filterJSON))
 			}
-			defer resp.Body.Close()
 
-			body, err := io.ReadAll(resp.Body)
+			body, err := getOK(c, "/api/v3/time_entries?"+params.Encode(), "time entries")
 			if err != nil {
-				return fmt.Errorf("read response: %w", err)
+				return err
 			}
 
 			if outputFlag(cmd) == "json" {
@@ -83,7 +103,8 @@ func newTimeEntriesCmd() *cobra.Command {
 				return fmt.Errorf("parse response: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Time Entries (%d total):\n", result.Total)
+			fmt.Fprintf(cmd.OutOrStdout(), "Time Entries (%d total, page %d/%d):\n",
+				result.Total, page, pageCount(result.Total, pageSize))
 			header := []string{"ID", "Date", "Hours", "Comment", "Work Package", "Project", "User"}
 			var rows [][]string
 			for _, te := range result.Embedded.Elements {
@@ -111,6 +132,7 @@ func newTimeEntriesCmd() *cobra.Command {
 	}
 	listCmd.Flags().StringP("project", "p", "", "Filter by project ID")
 	listCmd.Flags().StringP("work-package", "W", "", "Filter by work package ID")
+	addPageFlags(listCmd, listAllPageSize)
 	cmd.AddCommand(listCmd)
 
 	// create subcommand

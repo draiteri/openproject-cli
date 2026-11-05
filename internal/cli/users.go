@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 
 	"github.com/spf13/cobra"
 )
@@ -15,7 +14,7 @@ func newUsersCmd() *cobra.Command {
 		Long:  `Read users from the OpenProject server.`,
 	}
 
-	cmd.AddCommand(&cobra.Command{
+	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all users",
 		Long:  `List all users on the OpenProject server.`,
@@ -25,15 +24,14 @@ func newUsersCmd() *cobra.Command {
 				return fmt.Errorf("not authenticated")
 			}
 
-			resp, err := c.Get("/api/v3/users")
+			page, pageSize, err := pageFlags(cmd)
 			if err != nil {
-				return fmt.Errorf("fetch users: %w", err)
+				return err
 			}
-			defer resp.Body.Close()
 
-			body, err := io.ReadAll(resp.Body)
+			body, err := getOK(c, "/api/v3/users?"+pageParams(page, pageSize).Encode(), "users")
 			if err != nil {
-				return fmt.Errorf("read response: %w", err)
+				return err
 			}
 
 			if outputFlag(cmd) == "json" {
@@ -60,7 +58,8 @@ func newUsersCmd() *cobra.Command {
 				return fmt.Errorf("parse response: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Users (%d total):\n", result.Total)
+			fmt.Fprintf(cmd.OutOrStdout(), "Users (%d total, page %d/%d):\n",
+				result.Total, page, pageCount(result.Total, pageSize))
 			header := []string{"ID", "Name", "Email", "Login", "Admin"}
 			var rows [][]string
 			for _, u := range result.Embedded.Elements {
@@ -79,7 +78,9 @@ func newUsersCmd() *cobra.Command {
 			printTable(cmd.OutOrStdout(), header, rows)
 			return nil
 		},
-	})
+	}
+	addPageFlags(listCmd, listAllPageSize)
+	cmd.AddCommand(listCmd)
 
 	return cmd
 }
